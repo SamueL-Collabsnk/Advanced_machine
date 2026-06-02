@@ -100,3 +100,6 @@ plt.imshow(X_test[0])
 plt.title(f"Predicted: {class_names[predicted_class]}")
 plt.axis("off")
 plt.show()
+
+#Save the model
+model.save("cifar_cnn_model.keras")

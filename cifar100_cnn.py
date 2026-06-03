@@ -54,7 +54,7 @@ X_test  = X_test/255.0
 
 #build the model
 model = keras.Sequential([
-    layers.input(shape=(32,32,3)),
+    layers.Input(shape=(32,32,3)),
     
     layers.Conv2D(32, (3,3), activation = "relu"),
     layers.BatchNormalization(),
@@ -81,7 +81,7 @@ model = keras.Sequential([
     
 model.compile(
     optimizer = "adam",
-    loss = "sparse_categorical_entropy",
+    loss = "sparse_categorical_crossentropy",
     metrics = ["accuracy"]
 )    
 #train the model
@@ -102,11 +102,11 @@ print("Accuracy:", accuracy)
 predictions = model.predict(X_test)
 
 #Predict the class of the first image in the test set
-predicted_class =  np.argmax(class_names[predictions[0]])
+predicted_class =  np.argmax(predictions[0])
 print("First class Prediction:", class_names[predicted_class])
 
 #Actual class of the first image in the test set
-actual_class = class_names[y_test[0][0]]
+actual_class = y_test[0][0]
 print("Actual Class:", class_names[actual_class])
 
 #Visualize the predicted class

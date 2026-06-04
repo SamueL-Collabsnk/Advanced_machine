@@ -73,6 +73,15 @@ model.compile(
     loss = "sparse_categorical_crossentropy",
     metrics = ["accuracy"]
 )
+#Learning rate scheduler
+reduce_lr = keras.callbacks.ReduceLROnPlateau(
+    monitor = "val_loss",
+    factor = 0.5,
+    patience = 3,
+    min_lr = 1e-7,
+    verbose = 1
+)
+
 #EarlyStopping
 early_stop = keras.callbacks.EarlyStopping(
     monitor = "val_loss",
@@ -94,7 +103,7 @@ model.fit(
     epochs = 20,
     batch_size = 64,
     validation_split = 0.2,
-    callbacks = [early_stop, checkpoint]
+    callbacks = [reduce_lr, early_stop, checkpoint]
 )
 
 loss, accuracy = model.evaluate(

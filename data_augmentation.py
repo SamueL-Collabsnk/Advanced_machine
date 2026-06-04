@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.metrics import classification_report, confusion_matrix
 
 import tensorflow as tf
 from tensorflow import keras
@@ -79,11 +80,24 @@ model.compile(
     loss = "sparse_categorical_crossentropy",
     metrics = ["accuracy"]
 )
+log_dir = "logs"
+
+tensorboard = keras.callbacks.TensorBoard(
+    log_dir = log_dir,
+    histogram_freq = 1
+)
+
+reduce_lr = keras.callbacks.ReduceLROnPlateau(
+    monitor = "val_loss", 
+    factor = 0.5,
+    patience = 3,
+    min_lr = 1e-7
+)
 
 #Early Stopping
 early_stopping = keras.callbacks.EarlyStopping(
     monitor = "val_loss",
-    patience = 5,
+    patience = 8,
     restore_best_weights = True
 )
 
@@ -94,13 +108,13 @@ checkpoint = keras.callbacks.ModelCheckpoint(
     save_best_only = True
 )
 
-model.fit(
+history = model.fit(
     X_train,
     y_train,
-    epochs = 30,
+    epochs = 20,
     batch_size = 64,
     validation_split = 0.2,
-    callbacks = [early_stopping, checkpoint]
+    callbacks = [tensorboard, reduce_lr, early_stopping, checkpoint]
 )
 
 loss, accuracy = model.evaluate(
@@ -109,10 +123,35 @@ loss, accuracy = model.evaluate(
 )
 print("Accuracy:", accuracy)
 
+import pandas as pd
+history_df = pd.DataFrame(history.history)
+
 predictions = model.predict(X_test)
 
-predicted_class = np.argmax(predictions[50])
-actual_class = y_test[50][0]
+predicted_class = np.argmax(predictions, axis = 1)
+actual_class = y_test.flatten()
 
-print(f"Predicted Label:, {class_names[predicted_class]}" )
-print(f"Actual Class:, {class_names[actual_class]}")
+first_predicted = predicted_class[0]
+first_actual = actual_class[0]
+
+print(f"Predicted Label: {class_names[first_predicted]}")
+print(f"Actual Class: {class_names[first_actual]}")
+
+print("Classification Report for the Data:")
+print(classification_report(actual_class,predicted_class))
+
+import seaborn as sns
+cm = confusion_matrix(actual_class, predicted_class)
+print(cm)
+plt.figure(figsize=(8,6))
+sns.heatmap(
+    cm,
+    annot = True,
+    fmt = "d"
+)
+plt.xlabel("actual_class")
+plt.ylabel("predicted_class")
+plt.title("Confusion Matrix for Actual Vs Predicted Class")
+plt.show()
+
+model.save("data_augmentation_model.keras")

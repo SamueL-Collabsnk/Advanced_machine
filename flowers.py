@@ -1,7 +1,10 @@
 from sklearn.datasets import load_iris
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import classification_report, confusion_matrix
+import seaborn as sns 
 
+import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
@@ -48,13 +51,43 @@ model.compile(
     loss = 'categorical_crossentropy',
     metrics = ['accuracy']
 )
+#creating log directory
+log_dir = "logs"
+
+tensorboard = keras.callbacks.TensorBoard(
+    log_dir = log_dir,
+    histogram_freq = 1
+)
+
+
+reduce_lr = keras.callbacks.ReduceLROnPlateau(
+    monitor = "val_loss",
+    factor = 0.1,
+    patience = 3,
+    min_lr = 1e-7
+)
+
+early_stop = keras.callbacks.EarlyStopping(
+    monitor = "val_loss",
+    patience = 8,
+    restore_best_weights = True
+)
+
+checkpoint = keras.callbacks.ModelCheckpoint(
+    "best_iris.keras",
+    monitor = "val_accuracy",
+    save_best_only = True
+)
+
+
 #train the model
 history = model.fit(
     X_train,
     y_train,
-    epochs = 10,
+    epochs = 30,
     batch_size = 16,
     validation_split = 0.2,
+    callbacks = [tensorboard, reduce_lr, early_stop,checkpoint]
 )
 
 #Evaluation of the model 
@@ -63,9 +96,45 @@ loss, accuracy = model.evaluate(
     y_test
 )
 print("Accuracy:", accuracy)
+
+history_df = pd.DataFrame(history.history)
+print(history_df.head())
 #Make predictions
 predictions = model.predict(X_test)
-print(predictions[0])
+
+y_pred = np.argmax(predictions, axis = 1)
+
+y_actual = np.argmax(y_test,axis = 1)
+
+#Evaluation of the metrics
+cm = confusion_matrix(y_actual, y_pred)
+print(cm)
+
+plt.figure(figsize=(6,5))
+
+sns.heatmap(cm, annot = True, fmt= "d")
+plt.xlabel("y_actual")
+plt.ylabel("y_pred")
+plt.show()
+print("Classifcation Reports for the Data:")
+print (classification_report(y_actual, y_pred))
+
+wrong = np.where(
+    y_pred != y_actual
+)[0]
+print(wrong)
+print("Misclassified indices:", wrong)
+
+# Show details of each wrong prediction
+for idx in wrong:
+    print(f"\nSample {idx}:")
+    print(f"  Predicted: {idx} (Class {y_pred[idx]})")
+    print(f"  Actual: {idx} (Class {y_actual[idx]})")
+    print(f"  Features: {X_test[idx]}")
+ 
+
+print("\n" ,history.history.keys())  
+
 
 model.save('iris_model.keras')
 

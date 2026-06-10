@@ -39,10 +39,13 @@ class_names = [
     'willow_tree', 'wolf', 'woman', 'worm'
 ]    
 
-X_train = X_train.astype("float32")/ 255.0
-X_test = X_test.astype("float32")/ 255.0
-
-print(X_train.shape)
+data_augmentation = keras.Sequential([
+    layers.RandomFlip("horizontal"),
+    layers.RandomRotation(0.1),
+    layers.RandomZoom(0.1),
+    layers.RandomTranslation(0.1,0.1),
+    layers.RandomContrast(0.1),
+])
 
 #Feature Extraction
 base_model = ResNet50(
@@ -59,6 +62,8 @@ for layer in base_model.layers[:-20]:
 #Build model
 model = keras.Sequential([
     layers.Input(shape=(224,224,3)),
+    layers.Rescaling(1.0/255.0),
+    data_augmentation,
     layers.Resizing(224,224),
     base_model,
     

@@ -3,8 +3,10 @@ import matplotlib.pyplot as plt
 
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras import layers
+from tensorflow.keras import layers, regularizers
 from tensorflow.keras.datasets import cifar10
+from tensorflow.keras.applications import EfficientNetB0
+import keras_tuner as kt
 
 # Load the Dataset
 (X_train, y_train), (X_test, y_test) = cifar10.load_data()
@@ -37,69 +39,134 @@ for i in range(9):
     plt.axis("off")
 plt.show()    
 
-# Normalize the Data
-X_train = X_train/255.0
-X_test = X_test/255.0
 
-#Build model
-model = keras.Sequential([
-    layers.Conv2D(
-        32,
-        (3,3), 
-        activation = "relu",
-        input_shape = (32,32,3)
-        ),
-    layers.MaxPooling2D((2,2)),
-    layers.Conv2D(
-        64,
-        (3,3),
-        activation = "relu"),
-    layers.MaxPooling2D((2,2)),
-    layers.Flatten(),
-    layers.Dense(128, activation = "relu"),
-    layers.Dropout(0.3),
-    layers.Dense(10, activation = "softmax")
+data_augmentation = keras.Sequential([
+    layers.RandomFlip("horizontal"),
+    layers.RandomRotation(0.1),
+    layers.RandomZoom(0.1),
+    layers.RandomTranslation(0.1,0.1),
+    layers.RandomContrast(0.1),
 ])
 
-#Model Compile
-model.compile(
-    optimizer = "adam",
-    loss = "sparse_categorical_crossentropy",
+basemodel = EfficientNetB0(
+    weights = "imagenet",
+    include_top = False,
+    input_shape = (224,224,3)
+)
+basemodel.trainable = True
+
+for layer in basemodel.layers[:-20]:
+    layer.trainable = False
+
+#Build model
+def build_model(hp):
+    lr = hp.Choice("learning_rate", [1e-4, 5e-4,1e-3])
+    dense_units = hp.Int("dense_units", min_value = 128, max_value=256, step=64)
+    wd = hp.Choice("weight_decay", [0.0,1e-4,1e-3])
+    model = keras.Sequential([
+        layers.Input(shape=(32,32,3), dtype = "float32"),
+        layers.Resizing(224,224),
+        layers.Rescaling(1.0/255.0),
+        data_augmentation,
+        basemodel,
+        layers.GlobalAveragePooling2D(),
+        layers.Dense(dense_units, activation = "relu",
+                     kernel_regularizer = keras.regularizers.l2(wd)),
+        layers.Dropout(0.5),
+        layers.Dense(10, activation = "softmax")
+    ])
+    
+    model.compile(
+    optimizer = keras.optimizers.Adam(
+    learning_rate= lr),
+    loss = keras.losses.SparseCategoricalCrossentropy(),
     metrics = ["accuracy"]
 )
+    return model
+#Hyperparameter tuner
+tuner = kt.RandomSearch(
+    build_model,
+    objective ="val_accuracy",
+    max_trials= 10,
+    overwrite = True,
+    directory = "tuning",
+    project_name = "cifar10cnn_project"
+)
+AUTOTUNE = tf.data.AUTOTUNE
+train_ds = tf.data.Dataset.from_tensor_slices((X_train, y_train))
+train_ds = train_ds.shuffle(10000).batch(64).prefetch(AUTOTUNE)
 
+val_ds = tf.data.Dataset.from_tensor_slices((X_test, y_test)).batch(64).prefetch(AUTOTUNE)
+
+#Search for the best parameters
+tuner.search(
+    train_ds,
+    epochs = 5,
+    validation_data = val_ds,
+    batch_size = 32
+)
+best_hp = tuner.get_best_hyperparameters(1)[0]
+print("Best Hyperparameters:")
+print(best_hp)
+
+#Build Best Model
+best_model = tuner.hypermodel.build(
+    best_hp
+)
+#Callbacks
+
+tensorboard = keras.callbacks.TensorBoard(
+    log_dir = "logs",
+    histogram_freq = 1
+)
+reduce_lr = keras.callbacks.ReduceLROnPlateau(
+    monitor ="val_loss",
+    factor = 0.5,
+    patience = 3,
+    min_lr = 1e-6
+)
+early_stop = keras.callbacks.EarlyStopping(
+    monitor = "val_loss",
+    patience = 8,
+    restore_best_weights = True
+)
+checkpoint = keras.callbacks.ModelCheckpoint(
+    "best_cifar10.keras",
+    monitor = "val_accuracy",
+    save_best_only = True
+)
 #Train the Model
-model.fit(
-    X_train,
-    y_train,
-    epochs= 10,
+history = best_model.fit(
+    train_ds,
+    epochs= 30,
     batch_size = 64,
-    validation_split = 0.2
+    validation_data = val_ds,
+    callbacks = [tensorboard,
+                 reduce_lr,
+                 early_stop,
+                 checkpoint,
+                 ]
 )
 
 #Evaluate the model
-loss, accuracy = model.evaluate(
+loss, accuracy = best_model.evaluate(
     X_test,
     y_test
 )
 
 print("Accuracy:", accuracy)
 
+import pandas as pd
+history_df = pd.DataFrame(
+    history.history
+)
+history_df.to_csv("training_history.csv", index=False)
+
 #Make Predictions
-predictions = model.predict(X_test)
+predictions = best_model.predict(X_test)
 
 #first prediction
-predicted_class = np.argmax(predictions[0])
-print("Predictions:", class_names[predicted_class])
-
-#Actual Label
-print("Actual:", class_names[y_test[0][0]])
-
-#Visualize the Prediction
-plt.imshow(X_test[0])
-plt.title(f"Predicted: {class_names[predicted_class]}")
-plt.axis("off")
-plt.show()
-
+predicted_classes = np.argmax(predictions, axis=1)
+first_predicted = predicted_classes[0]
 #Save the model
-model.save("cifar_cnn_model.keras")
+best_model.save("cifar_cnn_model.keras")
